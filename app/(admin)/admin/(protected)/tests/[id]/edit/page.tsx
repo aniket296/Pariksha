@@ -4,6 +4,8 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { TestBasicForm } from '@/components/admin/TestBasicForm'
 import { StatusBadge } from '@/components/ui/Badge'
+import { QuestionList } from '@/components/admin/questions/QuestionList'
+import { TestShufflingSettings } from '@/components/admin/questions/TestShufflingSettings'
 
 // Force dynamic — fetches per-test data
 export const dynamic = 'force-dynamic'
@@ -52,10 +54,19 @@ export default async function EditTestPage({ params }: EditPageProps) {
     notFound()
   }
 
+  // Fetch questions for this test
+  const { data: questions } = await supabase
+    .from('questions')
+    .select('*')
+    .eq('test_id', test.id)
+    .order('order_index', { ascending: true })
+
+  const questionList = questions || []
+
   return (
-    <div className="max-w-3xl">
+    <div className="max-w-4xl space-y-6">
       {/* Breadcrumb */}
-      <nav aria-label="Breadcrumb" className="mb-6">
+      <nav aria-label="Breadcrumb">
         <ol className="flex items-center gap-2 text-sm text-gray-500">
           <li>
             <Link
@@ -75,7 +86,7 @@ export default async function EditTestPage({ params }: EditPageProps) {
       </nav>
 
       {/* Page header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <div className="flex items-center gap-3 mb-1">
             <h1 className="text-2xl font-bold text-gray-900 truncate">
@@ -88,7 +99,7 @@ export default async function EditTestPage({ params }: EditPageProps) {
           </p>
         </div>
 
-        {/* Settings link (will be fully implemented in Phase 4) */}
+        {/* Settings link */}
         <Link
           href={`/admin/tests/${test.id}/settings`}
           className="
@@ -115,67 +126,45 @@ export default async function EditTestPage({ params }: EditPageProps) {
         </Link>
       </div>
 
-      {/* Sections */}
-      <div className="space-y-6">
-        {/* Basic info section */}
-        <section
-          aria-labelledby="basic-info-heading"
-          className="bg-white rounded-xl border border-gray-200 shadow-sm p-6"
+      {/* Basic info section */}
+      <section
+        aria-labelledby="basic-info-heading"
+        className="bg-white rounded-xl border border-gray-200 shadow-sm p-6"
+      >
+        <h2
+          id="basic-info-heading"
+          className="text-base font-semibold text-gray-900 mb-4"
         >
-          <h2
-            id="basic-info-heading"
-            className="text-base font-semibold text-gray-900 mb-4"
-          >
-            Basic information
-          </h2>
-          <TestBasicForm
-            testId={test.id}
-            defaultTitle={test.title}
-            defaultDescription={test.description}
-          />
-        </section>
+          Basic Information
+        </h2>
+        <TestBasicForm
+          testId={test.id}
+          defaultTitle={test.title}
+          defaultDescription={test.description}
+        />
+      </section>
 
-        {/* Questions section — Question Builder added in Phase 3 */}
-        <section
-          aria-labelledby="questions-heading"
-          className="bg-white rounded-xl border border-gray-200 shadow-sm p-6"
-        >
-          <div className="flex items-center justify-between mb-4">
-            <h2
-              id="questions-heading"
-              className="text-base font-semibold text-gray-900"
-            >
-              Questions
-            </h2>
-            <span className="text-xs font-medium text-gray-400 tabular-nums">
-              0 questions
-            </span>
-          </div>
+      {/* Shuffling and Pool Settings */}
+      <section aria-labelledby="shuffling-heading">
+        <TestShufflingSettings
+          testId={test.id}
+          shuffleQuestions={test.shuffle_questions}
+          shuffleOptions={test.shuffle_options}
+          poolPickCount={test.pool_pick_count}
+          totalQuestions={questionList.length}
+        />
+      </section>
 
-          {/* Empty state — Question Builder will be embedded here in Phase 3 */}
-          <div className="text-center py-12 rounded-lg bg-gray-50 border border-dashed border-gray-200">
-            <div
-              className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-gray-200 text-gray-400 mb-3"
-              aria-hidden="true"
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-                <path
-                  d="M9 12h6M12 9v6M3 12a9 9 0 1118 0 9 9 0 01-18 0z"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </div>
-            <p className="text-sm font-medium text-gray-600 mb-1">
-              No questions yet
-            </p>
-            <p className="text-xs text-gray-400">
-              The question builder will be available here.
-            </p>
-          </div>
-        </section>
-      </div>
+      {/* Question Builder Section */}
+      <section
+        aria-labelledby="questions-builder-heading"
+        className="bg-white rounded-xl border border-gray-200 shadow-sm p-6"
+      >
+        <QuestionList
+          testId={test.id}
+          questions={questionList}
+        />
+      </section>
     </div>
   )
 }
