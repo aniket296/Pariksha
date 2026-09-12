@@ -16,40 +16,56 @@
  *   - Any client-side code
  */
 import 'server-only'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/types/database'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+let _adminClient: SupabaseClient<Database> | null = null
 
-if (!supabaseUrl) {
-  throw new Error(
-    '[pariksha] NEXT_PUBLIC_SUPABASE_URL is not set. ' +
-    'Add it to .env.local.'
-  )
-}
+function getSupabaseAdmin(): SupabaseClient<Database> {
+  if (_adminClient) return _adminClient
 
-if (!supabaseServiceRoleKey) {
-  throw new Error(
-    '[pariksha] SUPABASE_SERVICE_ROLE_KEY is not set. ' +
-    'Add it to .env.local. NEVER expose this key to the browser.'
-  )
-}
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
-/**
- * Singleton admin client — service role, bypasses RLS.
- * Exported as a named constant (not a factory function) because it
- * does not manage session cookies and is safe to reuse across requests.
- */
-export const supabaseAdmin = createClient<Database>(
-  supabaseUrl,
-  supabaseServiceRoleKey,
-  {
+  if (!supabaseUrl || !supabaseServiceRoleKey) {
+    // Graceful fallback for static build analysis / page data collection
+    return createClient<Database>(
+      supabaseUrl || 'https://placeholder.supabase.co',
+      supabaseServiceRoleKey || 'placeholder-service-role-key',
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+        },
+      }
+    )
+  }
+
+  _adminClient = createClient<Database>(supabaseUrl, supabaseServiceRoleKey, {
     auth: {
-      // No session persistence for the service-role client
       autoRefreshToken: false,
       persistSession: false,
     },
+  })
+
+  return _adminClient
+}
+
+/**
+ * Proxy singleton admin client — service role, bypasses RLS.
+ * Lazily evaluates environment variables so that 'next build' succeeds
+ * even before live Supabase credentials are provided in .env.local.
+ */
+export const supabaseAdmin: SupabaseClient<Database> = new Proxy(
+  {} as SupabaseClient<Database>,
+  {
+    get(_target, prop) {
+      const client = getSupabaseAdmin()
+      const val = (client as unknown as Record<string, unknown>)[prop as string]
+      if (typeof val === 'function') {
+        return val.bind(client)
+      }
+      return val
+    },
   }
 )
-
