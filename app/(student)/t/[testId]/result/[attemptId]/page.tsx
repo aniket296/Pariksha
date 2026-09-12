@@ -69,34 +69,39 @@ export default async function StudentResultPage({
 
   const respMap = new Map(responsesData?.map((r) => [r.question_id, r]) || [])
 
-  // 5. Construct question data respecting reviewConfig permissions
+  // 5. Construct question data respecting reviewConfig permissions (Server-side redaction)
+  const showBreakdown = Boolean(test.review_config?.show_breakdown)
+  const showExplanations = Boolean(test.review_config?.show_explanations)
+  const showCorrectAnswers = Boolean(test.review_config?.show_correct_answers)
+  const showScore = Boolean(test.review_config?.show_score)
+
   const questionsList: ResultQuestionData[] = []
 
-  assignedIds.forEach((qId, idx) => {
-    const rawQ = qMap.get(qId)
-    if (!rawQ) return
+  if (showBreakdown) {
+    assignedIds.forEach((qId, idx) => {
+      const rawQ = qMap.get(qId)
+      if (!rawQ) return
 
-    const resp = respMap.get(qId)
+      const resp = respMap.get(qId)
 
-    questionsList.push({
-      id: rawQ.id,
-      order_index: idx,
-      type: rawQ.type,
-      prompt: rawQ.prompt,
-      points: rawQ.points,
-      negative_points: rawQ.negative_points,
-      explanation: rawQ.explanation,
-      content: rawQ.content,
-      // Only include grading_key if show_correct_answers is enabled
-      ...(test.review_config?.show_correct_answers
-        ? { grading_key: rawQ.grading_key }
-        : {}),
-      student_answer: resp?.student_answer,
-      awarded_points: resp?.awarded_points ?? null,
-      is_correct: resp?.is_correct ?? null,
-      teacher_comment: resp?.teacher_comment ?? null,
+      questionsList.push({
+        id: rawQ.id,
+        order_index: idx,
+        type: rawQ.type,
+        prompt: rawQ.prompt,
+        points: rawQ.points,
+        negative_points: rawQ.negative_points,
+        explanation: showExplanations ? rawQ.explanation : null,
+        content: rawQ.content,
+        // Only include grading_key if show_correct_answers is enabled
+        ...(showCorrectAnswers ? { grading_key: rawQ.grading_key } : {}),
+        student_answer: resp?.student_answer ?? null,
+        awarded_points: resp?.awarded_points ?? null,
+        is_correct: resp?.is_correct ?? null,
+        teacher_comment: resp?.teacher_comment ?? null,
+      })
     })
-  })
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 py-10 px-4 sm:px-6">
@@ -108,10 +113,10 @@ export default async function StudentResultPage({
         startedAt={attempt.started_at}
         submittedAt={attempt.submitted_at}
         attemptStatus={attempt.status}
-        score={attempt.score}
+        score={showScore ? attempt.score : null}
         maxScore={attempt.max_score}
-        percentage={attempt.percentage}
-        isPassed={attempt.is_passed}
+        percentage={showScore ? attempt.percentage : null}
+        isPassed={showScore ? attempt.is_passed : null}
         passPercentage={test.pass_percentage}
         passMessage={test.pass_message}
         failMessage={test.fail_message}

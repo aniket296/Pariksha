@@ -4,6 +4,7 @@ import type {
   QuestionContent,
   GradingKey,
   McqSingleGradingKey,
+  McqMultiContent,
   McqMultiGradingKey,
   TrueFalseGradingKey,
   FillBlankContent,
@@ -50,7 +51,8 @@ export function evaluateStudentAnswer(
     case 'mcq_single': {
       const key = gradingKey as McqSingleGradingKey
       const isCorrect = String(studentAnswer) === String(key.correct_choice_id)
-      const awarded = isCorrect ? points : -Math.abs(negativePoints)
+      const penalty = negativePoints > 0 ? -Math.abs(negativePoints) : 0
+      const awarded = isCorrect ? points : penalty
       return {
         is_correct: isCorrect,
         awarded_points: awarded,
@@ -69,7 +71,7 @@ export function evaluateStudentAnswer(
         return { is_correct: false, awarded_points: 0 }
       }
 
-      // Exact match
+      // Exact match check
       const isExact =
         studentSet.size === correctSet.size &&
         [...studentSet].every((val) => correctSet.has(val))
@@ -78,7 +80,12 @@ export function evaluateStudentAnswer(
         return { is_correct: true, awarded_points: points }
       }
 
-      // Partial credit calculation
+      // Partial credit calculation:
+      // Score = max(0, (C_sel / C_tot * points) - (I_sel / max(1, I_tot) * penalty))
+      const multiContent = content as McqMultiContent
+      const totalChoices = multiContent?.choices?.length || correctSet.size
+      const totalIncorrect = Math.max(1, totalChoices - correctSet.size)
+
       let correctSelected = 0
       let incorrectSelected = 0
 
@@ -90,15 +97,20 @@ export function evaluateStudentAnswer(
         }
       })
 
-      const fraction = correctSelected / correctSet.size
-      let awarded = fraction * points
+      const penaltyUnit = Math.max(negativePoints > 0 ? negativePoints : 0, points)
+      const deduction = (incorrectSelected / totalIncorrect) * penaltyUnit
+      let awarded = (correctSelected / correctSet.size) * points - deduction
 
-      if (incorrectSelected > 0 && negativePoints > 0) {
-        awarded -= incorrectSelected * negativePoints
+      // Strictly clamp individual question score to at least 0 (or penalty if negativePoints > 0)
+      if (negativePoints <= 0) {
+        awarded = Math.max(0, awarded)
+      } else {
+        awarded = Math.max(-Math.abs(negativePoints), awarded)
       }
 
-      // Round to 2 decimal places
+      // Round to 2 decimal places and avoid -0
       awarded = Math.round(awarded * 100) / 100
+      if (awarded === 0) awarded = 0
 
       return {
         is_correct: awarded > 0,
@@ -109,7 +121,8 @@ export function evaluateStudentAnswer(
     case 'true_false': {
       const key = gradingKey as TrueFalseGradingKey
       const isCorrect = String(studentAnswer) === String(key.correct_choice_id)
-      const awarded = isCorrect ? points : -Math.abs(negativePoints)
+      const penalty = negativePoints > 0 ? -Math.abs(negativePoints) : 0
+      const awarded = isCorrect ? points : penalty
       return {
         is_correct: isCorrect,
         awarded_points: awarded,
@@ -119,17 +132,21 @@ export function evaluateStudentAnswer(
     case 'fill_blank': {
       const key = gradingKey as FillBlankGradingKey
       const fillContent = content as FillBlankContent
-      const studentStr = String(studentAnswer).trim()
+      // Normalize whitespace: trim and collapse internal multiple spaces
+      const normalize = (s: string) => s.trim().replace(/\s+/g, ' ')
+      const studentStr = normalize(String(studentAnswer))
       const accepted = key.accepted_answers || []
 
       const isMatch = accepted.some((ans) => {
+        const normAns = normalize(ans)
         if (fillContent.case_sensitive) {
-          return ans.trim() === studentStr
+          return normAns === studentStr
         }
-        return ans.trim().toLowerCase() === studentStr.toLowerCase()
+        return normAns.toLowerCase() === studentStr.toLowerCase()
       })
 
-      const awarded = isMatch ? points : -Math.abs(negativePoints)
+      const penalty = negativePoints > 0 ? -Math.abs(negativePoints) : 0
+      const awarded = isMatch ? points : penalty
       return {
         is_correct: isMatch,
         awarded_points: awarded,

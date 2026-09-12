@@ -1,4 +1,4 @@
-// Vitest global test setup
-// Add any global test utilities, matchers, or mocks here.
-// This file is referenced in vitest.config.ts > test.setupFiles
+import { vi } from 'vitest'
 
+// Mock 'server-only' so server utilities and grading functions can be tested in Vitest
+vi.mock('server-only', () => ({}))

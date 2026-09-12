@@ -6,6 +6,7 @@ import type {
   QuestionContent,
   Choice,
   MatchingContent,
+  CheatEventType,
 } from '@/lib/types/database'
 
 export interface StudentSafeQuestion {
@@ -26,6 +27,7 @@ export interface VerifyAndStartResult {
 
 export interface StudentAttemptState {
   attemptId: string
+  testId: string
   testTitle: string
   testDescription: string | null
   timeLimitMins: number
@@ -394,6 +396,7 @@ export async function getStudentAttemptStateAction(
   return {
     state: {
       attemptId: attempt.id,
+      testId: test.id,
       testTitle: test.title,
       testDescription: test.description,
       timeLimitMins: test.time_limit_mins,
@@ -485,6 +488,23 @@ export async function submitStudentAttemptAction(
     return { success: true } // Already submitted
   }
 
+  // Fetch test to check timing limit
+  const { data: test } = await supabaseAdmin
+    .from('tests')
+    .select('time_limit_mins')
+    .eq('id', attempt.test_id)
+    .single()
+
+  let isTimedOut = false
+  if (test && test.time_limit_mins > 0) {
+    const startedMs = new Date(attempt.started_at).getTime()
+    const allowedMs = test.time_limit_mins * 60 * 1000
+    const graceMs = 15_000 // 15 seconds grace period for network latency
+    if (Date.now() > startedMs + allowedMs + graceMs) {
+      isTimedOut = true
+    }
+  }
+
   // Save any final responses passed at submit time
   if (finalResponses && Object.keys(finalResponses).length > 0) {
     const upserts = Object.entries(finalResponses).map(([qId, ans]) => ({
@@ -509,12 +529,84 @@ export async function submitStudentAttemptAction(
     await supabaseAdmin
       .from('attempts')
       .update({
-        status: 'submitted',
+        status: isTimedOut ? 'timed_out' : 'submitted',
         submitted_at: new Date().toISOString(),
       })
       .eq('id', attemptId)
   }
 
+  if (isTimedOut) {
+    await supabaseAdmin
+      .from('attempts')
+      .update({ status: 'timed_out' })
+      .eq('id', attemptId)
+  }
+
   return { success: true }
+}
+
+// ---------------------------------------------------------------------------
+// Action: Log Anti-Cheat Security Violation
+// ---------------------------------------------------------------------------
+export async function logCheatViolationAction(
+  attemptId: string,
+  sessionToken: string,
+  eventType: CheatEventType
+): Promise<{ error?: string; violationCount?: number; autoSubmitted?: boolean }> {
+  const { data: attempt, error: attemptError } = await supabaseAdmin
+    .from('attempts')
+    .select('id, test_id, status, session_token')
+    .eq('id', attemptId)
+    .single()
+
+  if (attemptError || !attempt || attempt.session_token !== sessionToken) {
+    return { error: 'Unauthorized attempt session.' }
+  }
+
+  if (attempt.status !== 'in_progress') {
+    return { error: 'Attempt is not active.' }
+  }
+
+  // Count existing violations for this attempt
+  const { count } = await supabaseAdmin
+    .from('cheat_logs')
+    .select('id', { count: 'exact', head: true })
+    .eq('attempt_id', attemptId)
+
+  const newCount = (count || 0) + 1
+
+  // Insert log
+  await supabaseAdmin.from('cheat_logs').insert({
+    attempt_id: attemptId,
+    event_type: eventType,
+    violation_count: newCount,
+    occurred_at: new Date().toISOString(),
+  })
+
+  // Check test policy for auto-submit
+  const { data: test } = await supabaseAdmin
+    .from('tests')
+    .select('anti_cheat_config')
+    .eq('id', attempt.test_id)
+    .single()
+
+  const config = test?.anti_cheat_config
+  if (config?.auto_submit_on_limit && newCount >= config.max_violations) {
+    // Auto-submit due to violation
+    try {
+      const { gradeAttempt } = await import('@/lib/grading/engine')
+      await gradeAttempt(attemptId)
+    } catch {
+      // ignore
+    }
+    await supabaseAdmin
+      .from('attempts')
+      .update({ status: 'auto_submitted_violation' })
+      .eq('id', attemptId)
+
+    return { violationCount: newCount, autoSubmitted: true }
+  }
+
+  return { violationCount: newCount, autoSubmitted: false }
 }
 

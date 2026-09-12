@@ -8,7 +8,10 @@ import { SubmitConfirmModal } from './SubmitConfirmModal'
 import { Button } from '@/components/ui/Button'
 import { useAutosave } from '@/hooks/useAutosave'
 import { useExamTimer } from '@/hooks/useExamTimer'
-import { submitStudentAttemptAction } from '@/lib/actions/student'
+import {
+  submitStudentAttemptAction,
+  logCheatViolationAction,
+} from '@/lib/actions/student'
 import { McqSingleRunner } from './questions/McqSingleRunner'
 import { McqMultiRunner } from './questions/McqMultiRunner'
 import { TrueFalseRunner } from './questions/TrueFalseRunner'
@@ -43,8 +46,10 @@ export function QuestionRunner({
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [violations, setViolations] = useState(0)
   const [violationAlert, setViolationAlert] = useState<string | null>(null)
+  const [isFullscreenLocked, setIsFullscreenLocked] = useState(false)
 
   const isSubmittingRef = useRef(false)
+  const lastViolationTime = useRef(0)
 
   const questions = initialState.questions || []
   const currentQ: StudentSafeQuestion | undefined = questions[currentIdx]
@@ -83,17 +88,15 @@ export function QuestionRunner({
             // ignore
           }
         }
-        // Redirect to results / review page
-        router.push(
-          `/t/${initialState.questions[0]?.id ? 'test' : ''}/result/${initialState.attemptId}`
-        )
+        // Redirect to results / review page with correct testId
+        router.push(`/t/${initialState.testId}/result/${initialState.attemptId}`)
       }
     } catch (err: unknown) {
       setSubmitError(err instanceof Error ? err.message : 'Submission failed')
       setIsSubmitting(false)
       isSubmittingRef.current = false
     }
-  }, [initialState.attemptId, initialState.questions, responses, router, sessionToken])
+  }, [initialState.attemptId, initialState.testId, responses, router, sessionToken])
 
   // Timer setup
   const { formattedTime, isUntimed, isWarning, isCritical } = useExamTimer({
@@ -102,51 +105,138 @@ export function QuestionRunner({
     onTimeExpired: executeSubmit,
   })
 
-  // Anti-Cheat: Tab Switch & Window Blur Monitoring
+  // Anti-Cheat: Tab Switch & Window Blur Monitoring with Server-Side Logging
   useEffect(() => {
     if (!initialState.antiCheatConfig?.detect_tab_switch) return
 
+    const handleFocusLoss = async () => {
+      const now = Date.now()
+      // Deduplicate focus loss events within 1500ms
+      if (now - lastViolationTime.current < 1500) return
+      lastViolationTime.current = now
+
+      try {
+        const res = await logCheatViolationAction(
+          initialState.attemptId,
+          sessionToken,
+          'tab_switch'
+        )
+        const count = res.violationCount ?? (violations + 1)
+        setViolations(count)
+        setViolationAlert(
+          `Security Warning: Tab switch / focus loss detected (${count}/${initialState.antiCheatConfig.max_violations}). Stay in this window.`
+        )
+
+        if (res.autoSubmitted) {
+          router.push(`/t/${initialState.testId}/result/${initialState.attemptId}`)
+        }
+      } catch {
+        // Fallback local increment
+        setViolations((prev) => prev + 1)
+      }
+    }
+
     const handleVisibilityChange = () => {
       if (document.hidden) {
-        setViolations((prev) => {
-          const count = prev + 1
-          setViolationAlert(
-            `Warning: Tab switch detected (${count}/${initialState.antiCheatConfig.max_violations}). Stay on this tab to avoid disqualification.`
-          )
-
-          if (
-            initialState.antiCheatConfig.auto_submit_on_limit &&
-            count >= initialState.antiCheatConfig.max_violations
-          ) {
-            executeSubmit()
-          }
-          return count
-        })
+        handleFocusLoss()
       }
     }
 
     document.addEventListener('visibilitychange', handleVisibilityChange)
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
-  }, [executeSubmit, initialState.antiCheatConfig])
+    window.addEventListener('blur', handleFocusLoss)
 
-  // Anti-Cheat: Clipboard & Context Menu Blocking
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('blur', handleFocusLoss)
+    }
+  }, [initialState.antiCheatConfig, initialState.attemptId, initialState.testId, router, sessionToken, violations])
+
+  // Anti-Cheat: Fullscreen Enforcement
+  useEffect(() => {
+    if (!initialState.antiCheatConfig?.enforce_fullscreen) return
+
+    const handleFullscreenChange = async () => {
+      if (!document.fullscreenElement) {
+        setIsFullscreenLocked(true)
+        const now = Date.now()
+        if (now - lastViolationTime.current >= 1500) {
+          lastViolationTime.current = now
+          const res = await logCheatViolationAction(
+            initialState.attemptId,
+            sessionToken,
+            'fullscreen_exit'
+          )
+          if (res.violationCount) setViolations(res.violationCount)
+          if (res.autoSubmitted) {
+            router.push(`/t/${initialState.testId}/result/${initialState.attemptId}`)
+          }
+        }
+      } else {
+        setIsFullscreenLocked(false)
+      }
+    }
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+
+    if (!document.fullscreenElement) {
+      setIsFullscreenLocked(true)
+    }
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange)
+    }
+  }, [initialState.antiCheatConfig?.enforce_fullscreen, initialState.attemptId, initialState.testId, router, sessionToken])
+
+  const requestFullscreen = async () => {
+    try {
+      if (document.documentElement.requestFullscreen) {
+        await document.documentElement.requestFullscreen()
+        setIsFullscreenLocked(false)
+      }
+    } catch {
+      setIsFullscreenLocked(false)
+    }
+  }
+
+  // Anti-Cheat: Clipboard, Context Menu & DevTools Shortcuts Blocking
   useEffect(() => {
     if (!initialState.antiCheatConfig?.block_clipboard) return
 
-    const blockEvent = (e: Event) => e.preventDefault()
+    const blockEvent = (e: Event) => {
+      e.preventDefault()
+      const eventType =
+        e.type === 'copy'
+          ? 'copy_attempt'
+          : e.type === 'paste'
+          ? 'paste_attempt'
+          : 'context_menu'
+      logCheatViolationAction(initialState.attemptId, sessionToken, eventType).catch(() => {})
+    }
+
+    const blockShortcuts = (e: KeyboardEvent) => {
+      if (
+        e.key === 'F12' ||
+        (e.ctrlKey && e.shiftKey && ['I', 'i', 'J', 'j', 'C', 'c'].includes(e.key)) ||
+        (e.ctrlKey && ['u', 'U'].includes(e.key))
+      ) {
+        e.preventDefault()
+      }
+    }
 
     document.addEventListener('copy', blockEvent)
     document.addEventListener('paste', blockEvent)
     document.addEventListener('cut', blockEvent)
     document.addEventListener('contextmenu', blockEvent)
+    document.addEventListener('keydown', blockShortcuts)
 
     return () => {
       document.removeEventListener('copy', blockEvent)
       document.removeEventListener('paste', blockEvent)
       document.removeEventListener('cut', blockEvent)
       document.removeEventListener('contextmenu', blockEvent)
+      document.removeEventListener('keydown', blockShortcuts)
     }
-  }, [initialState.antiCheatConfig?.block_clipboard])
+  }, [initialState.antiCheatConfig?.block_clipboard, initialState.attemptId, sessionToken])
 
   const toggleFlag = (qId: string) => {
     setFlaggedIds((prev) => {
@@ -459,6 +549,29 @@ export function QuestionRunner({
         onConfirm={executeSubmit}
         onCancel={() => setShowSubmitModal(false)}
       />
+
+      {/* Fullscreen Lockout Modal */}
+      {isFullscreenLocked && (
+        <div className="fixed inset-0 z-50 bg-gray-900/90 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-8 max-w-md w-full text-center space-y-4 shadow-2xl border border-gray-200">
+            <span className="text-4xl">🔒</span>
+            <h2 className="text-xl font-bold text-gray-900">Fullscreen Required</h2>
+            <p className="text-xs text-gray-600 leading-relaxed">
+              This examination requires full-screen mode to ensure exam integrity. Exiting full-screen is logged as a security event.
+            </p>
+            <div className="pt-2">
+              <Button
+                variant="primary"
+                size="md"
+                className="w-full justify-center"
+                onClick={requestFullscreen}
+              >
+                Enter Fullscreen & Resume
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
