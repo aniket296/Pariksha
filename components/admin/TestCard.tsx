@@ -102,6 +102,32 @@ export function TestCard({ test }: TestCardProps) {
           Edit
         </Link>
 
+        {/* Results & Analytics */}
+        <Link
+          href={`/admin/tests/${test.id}/results`}
+          className="
+            inline-flex items-center h-7 px-2.5 text-xs font-medium rounded
+            border border-gray-300 bg-white text-gray-700
+            hover:bg-gray-50 transition-colors duration-150
+          "
+        >
+          Results
+        </Link>
+
+        {/* Live Monitor for published tests */}
+        {test.status === 'published' && (
+          <Link
+            href={`/admin/tests/${test.id}/monitor`}
+            className="
+              inline-flex items-center h-7 px-2.5 text-xs font-medium rounded
+              border border-emerald-200 bg-emerald-50 text-emerald-700
+              hover:bg-emerald-100 transition-colors duration-150
+            "
+          >
+            Monitor
+          </Link>
+        )}
+
         {/* Archive — for non-archived tests */}
         {test.status !== 'archived' && (
           <form action={archiveWithId}>
