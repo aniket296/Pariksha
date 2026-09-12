@@ -33,3 +33,4 @@ export function parseWhitelistCsv(text: string): WhitelistEntry[] {
 
   return entries
 }
+
