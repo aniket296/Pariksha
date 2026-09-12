@@ -1,0 +1,94 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ==========================================================================
+   Pariksha — Global Styles
+   System fonts only (PART 3.1 of spec — no external web fonts)
+   ========================================================================== */
+
+@layer base {
+  :root {
+    /* System font stack — matches tailwind.config.ts */
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+      Helvetica, Arial, sans-serif;
+  }
+
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    font-feature-settings: normal;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* -------------------------------------------------------------------------
+     Accessibility: Focus management
+     Keyboard users get a visible ring; mouse users do not.
+     (PART 37 of spec)
+     ------------------------------------------------------------------------- */
+  :focus-visible {
+    outline: 2px solid #2563eb; /* brand-600 */
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  /* -------------------------------------------------------------------------
+     Typography defaults
+     ------------------------------------------------------------------------- */
+  h1, h2, h3, h4, h5, h6 {
+    line-height: 1.25;
+    font-weight: 600;
+  }
+
+  /* -------------------------------------------------------------------------
+     Print styles — base rules (detailed per-page print CSS in print pages)
+     (PART 33 of spec)
+     ------------------------------------------------------------------------- */
+  @media print {
+    /* Hide interactive chrome when printing */
+    nav,
+    [data-no-print] {
+      display: none !important;
+    }
+
+    body {
+      background: white !important;
+      color: black !important;
+    }
+
+    a {
+      text-decoration: underline;
+    }
+  }
+}
+
+@layer utilities {
+  /* Visually-hidden but accessible to screen readers (PART 37) */
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+  }
+}
