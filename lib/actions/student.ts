@@ -499,26 +499,20 @@ export async function submitStudentAttemptAction(
       .upsert(upserts, { onConflict: 'attempt_id,question_id' })
   }
 
-  // Check if test has essay questions (requires teacher manual review)
-  const { data: testQuestions } = await supabaseAdmin
-    .from('questions')
-    .select('type')
-    .eq('test_id', attempt.test_id)
-
-  const hasEssay = testQuestions?.some((q) => q.type === 'essay')
-  const finalStatus = hasEssay ? 'pending_review' : 'submitted'
-
-  // Update attempt status
-  const { error: updateError } = await supabaseAdmin
-    .from('attempts')
-    .update({
-      status: finalStatus,
-      submitted_at: new Date().toISOString(),
-    })
-    .eq('id', attemptId)
-
-  if (updateError) {
-    return { error: 'Failed to submit exam: ' + updateError.message }
+  // Authoritative grading via grading engine
+  try {
+    const { gradeAttempt } = await import('@/lib/grading/engine')
+    await gradeAttempt(attemptId)
+  } catch (err: unknown) {
+    console.error('[Submit] Grading error:', err)
+    // Fallback: still mark submitted so attempt is not stuck in_progress
+    await supabaseAdmin
+      .from('attempts')
+      .update({
+        status: 'submitted',
+        submitted_at: new Date().toISOString(),
+      })
+      .eq('id', attemptId)
   }
 
   return { success: true }
