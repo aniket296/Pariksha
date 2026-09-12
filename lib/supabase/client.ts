@@ -1,4 +1,5 @@
 import { createBrowserClient } from '@supabase/ssr'
+import { type SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/types/database'
 
 /**
@@ -10,10 +11,10 @@ import type { Database } from '@/lib/types/database'
  * The anon key has limited permissions — all sensitive operations
  * are protected by RLS policies on the Supabase side.
  */
-export function createClient() {
+export function createClient(): SupabaseClient<Database> {
   return createBrowserClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
+  ) as unknown as SupabaseClient<Database>
 }
 

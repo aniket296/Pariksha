@@ -1,4 +1,5 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
+import { type SupabaseClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 import type { Database } from '@/lib/types/database'
 
@@ -12,7 +13,7 @@ import type { Database } from '@/lib/types/database'
  * For operations requiring elevated privileges (bypassing RLS),
  * use lib/supabase/admin.ts instead (SERVER ONLY).
  */
-export function createClient() {
+export function createClient(): SupabaseClient<Database> {
   const cookieStore = cookies()
 
   return createServerClient<Database>(
@@ -35,5 +36,5 @@ export function createClient() {
         },
       },
     }
-  )
+  ) as unknown as SupabaseClient<Database>
 }

@@ -235,6 +235,7 @@ export interface Database {
           pool_pick_count?: number | null
           updated_at?: string
         }
+        Relationships: []
       }
       questions: {
         Row: {
@@ -278,6 +279,7 @@ export interface Database {
           grading_key?: GradingKey
           explanation?: string | null
         }
+        Relationships: []
       }
       attempts: {
         Row: {
@@ -321,6 +323,7 @@ export interface Database {
           is_passed?: boolean | null
           session_token?: string | null
         }
+        Relationships: []
       }
       responses: {
         Row: {
@@ -350,6 +353,7 @@ export interface Database {
           teacher_comment?: string | null
           updated_at?: string
         }
+        Relationships: []
       }
       cheat_logs: {
         Row: {
@@ -366,7 +370,14 @@ export interface Database {
           violation_count?: number
           occurred_at?: string
         }
-        Update: never
+        Update: {
+          id?: string
+          attempt_id?: string
+          event_type?: CheatEventType
+          violation_count?: number
+          occurred_at?: string
+        }
+        Relationships: []
       }
     }
     Views: Record<string, never>
