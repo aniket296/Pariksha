@@ -64,3 +64,4 @@ CREATE INDEX IF NOT EXISTS idx_cheat_logs_attempt_id
 -- Count violations by type for auto-submit check
 CREATE INDEX IF NOT EXISTS idx_cheat_logs_attempt_event
     ON cheat_logs(attempt_id, event_type);
+

@@ -16,3 +16,4 @@
 
 -- Confirm extensions are active
 SELECT extname, extversion FROM pg_extension WHERE extname IN ('pgcrypto', 'uuid-ossp');
+

@@ -374,3 +374,4 @@ export interface Database {
     Enums: Record<string, never>
   }
 }
+

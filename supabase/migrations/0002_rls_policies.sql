@@ -227,3 +227,4 @@ USING (
 -- 5. FORCE ROW LEVEL SECURITY ensures even the table owner (postgres role)
 --    goes through RLS policies, providing defense in depth.
 -- =============================================================================
+

@@ -296,3 +296,4 @@ CREATE TABLE IF NOT EXISTS cheat_logs (
 
     occurred_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
