@@ -121,3 +121,4 @@ export default async function StudentResultPage({
     </div>
   )
 }
+
